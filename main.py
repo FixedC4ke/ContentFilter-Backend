@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 import model.classifier as clf
 import numpy as np
+import csv
+import re
 
 class DataForPrediction(BaseModel):
         data: str
@@ -51,10 +53,13 @@ async def get_prediction(textObj: DataForPrediction):
         data = {}
         for i in range(0, len(probs)):
             data[clf.le.classes_[i]] = probs[i]
+        data['допустимые сообщения'] = data['Допустимый контент']
         return data
 
 @app.post('/api/adjust')
 async def adjust_prediction(adjustment: Adjustment):
+        if re.search('[а-яёА-ЯЁ]', adjustment.text) is None:
+                return {"message": "Текст не содержит символов кириллицы"}
         text = [adjustment.text]
         vectorw = clf.vw.fit_transform(text)
         vectorc = clf.vc.fit_transform(text)
@@ -62,6 +67,10 @@ async def adjust_prediction(adjustment: Adjustment):
         data = sparse.hstack([vectorw, vectorc])
 
         category = [adjustment.category]
+        with open(baseDir.joinpath('model', 'dataset.csv'), 'a') as csvfile:
+               writer = csv.writer(csvfile, delimiter=';')
+               writer.writerow([adjustment.category, adjustment.text])
+
         y = clf.le.transform(category)
         clf.model.partial_fit(data, y)
         dump(clf.model, baseDir.joinpath('model', 'model.joblib'))

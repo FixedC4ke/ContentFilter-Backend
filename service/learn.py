@@ -10,7 +10,7 @@ import sys
 baseDir = pathlib.Path(__file__).resolve().parent.parent
 
 logreg = SGDClassifier(loss='log', n_jobs=-1)
-data = read_csv(baseDir.joinpath('model', 'myds.csv'), delimiter=';')
+data = read_csv(baseDir.joinpath('model', 'dataset.csv'), delimiter=';')
 print("Датасет загружен в память\nПредобработка загруженных данных...")
 
 le = LabelEncoder()
