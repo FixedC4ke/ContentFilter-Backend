@@ -4,11 +4,13 @@ from scipy import sparse
 import pathlib
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+#from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 import model.classifier as clf
+import service.redisConnection as r
 import numpy as np
 import csv
 import re
+import redis
 
 class DataForPrediction(BaseModel):
         data: str
@@ -27,14 +29,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(HTTPSRedirectMiddleware)
+#app.add_middleware(HTTPSRedirectMiddleware)
 
 @app.on_event('startup')
-async def load_model():
+async def prepare():
         clf.vw = load(baseDir.joinpath('model', 'vectorw.joblib'))
         clf.vc = load(baseDir.joinpath('model', 'vectorc.joblib'))
         clf.model = load(baseDir.joinpath('model', 'model.joblib'))
         clf.le = load(baseDir.joinpath('model', 'le.joblib'))
+        r.conn = redis.Redis(host='redis', port=6379)
+        r.conn.flushall()
 
 @app.get("/api/categories")
 def read_root():
@@ -43,6 +47,9 @@ def read_root():
 
 @app.post('/api/predict')
 async def get_prediction(textObj: DataForPrediction):
+        cachedValue = r.conn.hgetall(textObj.data)
+        if cachedValue!={}:
+                return cachedValue
         text = [textObj.data]
         vectorw = clf.vw.fit_transform(text)
         vectorc = clf.vc.fit_transform(text)
@@ -54,6 +61,7 @@ async def get_prediction(textObj: DataForPrediction):
         for i in range(0, len(probs)):
             data[clf.le.classes_[i]] = probs[i]
         data['допустимые сообщения'] = data['Допустимый контент']
+        r.conn.hmset(textObj.data, data)
         return data
 
 @app.post('/api/adjust')
