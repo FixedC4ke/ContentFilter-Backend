@@ -4,13 +4,15 @@ from scipy import sparse
 import pathlib
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-#from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 import model.classifier as clf
 import service.redisConnection as r
 import numpy as np
 import csv
 import re
 import redis
+import struct
+import json
+import os
 
 class DataForPrediction(BaseModel):
         data: str
@@ -29,7 +31,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-#app.add_middleware(HTTPSRedirectMiddleware)
+
+if os.environ["USE_HTTPS"]=="true":
+        from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+        app.add_middleware(HTTPSRedirectMiddleware)
 
 @app.on_event('startup')
 async def prepare():
@@ -38,31 +43,31 @@ async def prepare():
         clf.model = load(baseDir.joinpath('model', 'model.joblib'))
         clf.le = load(baseDir.joinpath('model', 'le.joblib'))
         r.conn = redis.Redis(host='redis', port=6379)
-        r.conn.flushall()
+        r.conn.flushdb()
 
 @app.get("/api/categories")
-def read_root():
-        return {"categories": np.array(clf.le.classes_).tolist(),
-                "safeCategory": "допустимые сообщения"}
+def return_categories():
+        return np.array(clf.le.classes_).tolist()
 
 @app.post('/api/predict')
 async def get_prediction(textObj: DataForPrediction):
-        cachedValue = r.conn.hgetall(textObj.data)
-        if cachedValue!={}:
-                return cachedValue
-        text = [textObj.data]
-        vectorw = clf.vw.fit_transform(text)
-        vectorc = clf.vc.fit_transform(text)
+        result = {}
+        cachedValue = r.conn.get(textObj.data)
+        # cachedValue = None
+        if cachedValue is not None:
+                result = list(cachedValue)
+        else:
+                text = [textObj.data]
+                vectorw = clf.vw.fit_transform(text)
+                vectorc = clf.vc.fit_transform(text)
 
-        data = sparse.hstack([vectorw, vectorc])
-        probs = clf.model.predict_proba(data)[0]
+                data = sparse.hstack([vectorw, vectorc])
+                probs = clf.model.predict_proba(data)[0]  
+                result = np.array(probs).tolist()
+                result = [round(x*100) for x in result]
+                r.conn.set(textObj.data, bytes(result))
 
-        data = {}
-        for i in range(0, len(probs)):
-            data[clf.le.classes_[i]] = probs[i]
-        data['допустимые сообщения'] = data['Допустимый контент']
-        r.conn.hmset(textObj.data, data)
-        return data
+        return result
 
 @app.post('/api/adjust')
 async def adjust_prediction(adjustment: Adjustment):
