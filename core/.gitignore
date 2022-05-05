@@ -1,2 +1,3 @@
 *.joblib
 dataset.csv
+__pycache__/
