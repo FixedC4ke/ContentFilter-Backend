@@ -29,7 +29,7 @@ app.add_middleware(
     allow_origins=['*'],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
 if os.environ["USE_HTTPS"]=="true":
@@ -70,7 +70,7 @@ async def get_prediction(textObj: DataForPrediction):
         return result
 
 @app.post('/api/adjust')
-async def adjust_prediction(adjustment: Adjustment):
+def adjust_prediction(adjustment: Adjustment):
         if re.search('[а-яёА-ЯЁ]', adjustment.text) is None:
                 return {"message": "Текст не содержит символов кириллицы"}
         text = [adjustment.text]
@@ -86,5 +86,6 @@ async def adjust_prediction(adjustment: Adjustment):
 
         y = clf.le.transform(category)
         clf.model.partial_fit(data, y)
+        r.conn.delete(adjustment.text)
         dump(clf.model, baseDir.joinpath('model', 'model.joblib'))
         return {"message": "success"}
