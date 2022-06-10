@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <form id="predictForm">
+        <label for="data">Введите текст:</label>
+        <br>
+        <textarea name="data" id="data" cols="30" rows="10"></textarea>
+        <br>
+        <button type="submit">Проверить</button>
+        <br>
+        <p id="result"></p>
+    </form>
+    <script>
+        let form = document.getElementById("predictForm");
+        let resultField = document.getElementById("result");
+        form.addEventListener("submit", (e)=>{
+            e.preventDefault();
+            let fd = new FormData(form);
+            let text = fd.get("data");
+            fetch(`/api/predict`, {
+                method: "POST",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                    "Content-Encoding": "gzip, deflate"
+                },
+                body: JSON.stringify({
+                    data: text
+                }),
+            })
+                .then(res=>res.json())
+                .then(res=>resultField.innerText=res)
+        })
+    </script>
+</body>
+</html>

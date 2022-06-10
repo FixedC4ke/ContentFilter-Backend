@@ -10,9 +10,9 @@ import numpy as np
 import csv
 import re
 import redis
-import struct
-import json
 import os
+from fastapi.staticfiles import StaticFiles
+import json
 
 class DataForPrediction(BaseModel):
         data: str
@@ -36,6 +36,8 @@ if os.environ["USE_HTTPS"]=="true":
         from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
         app.add_middleware(HTTPSRedirectMiddleware)
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 @app.on_event('startup')
 async def prepare():
         clf.vw = load(baseDir.joinpath('model', 'vectorw.joblib'))
@@ -43,7 +45,6 @@ async def prepare():
         clf.model = load(baseDir.joinpath('model', 'model.joblib'))
         clf.le = load(baseDir.joinpath('model', 'le.joblib'))
         r.conn = redis.Redis(host='redis', port=6379)
-        r.conn.flushdb()
 
 @app.get("/api/categories")
 def return_categories():
@@ -53,9 +54,8 @@ def return_categories():
 async def get_prediction(textObj: DataForPrediction):
         result = {}
         cachedValue = r.conn.get(textObj.data)
-        # cachedValue = None
         if cachedValue is not None:
-                result = list(cachedValue)
+                result = json.loads(cachedValue)
         else:
                 text = [textObj.data]
                 vectorw = clf.vw.fit_transform(text)
@@ -64,9 +64,8 @@ async def get_prediction(textObj: DataForPrediction):
                 data = sparse.hstack([vectorw, vectorc])
                 probs = clf.model.predict_proba(data)[0]  
                 result = np.array(probs).tolist()
-                result = [round(x*100) for x in result]
-                r.conn.set(textObj.data, bytes(result))
-
+                result = [round(n, 2) for n in result]
+                r.conn.set(textObj.data, json.dumps(result))
         return result
 
 @app.post('/api/adjust')
@@ -76,14 +75,11 @@ def adjust_prediction(adjustment: Adjustment):
         text = [adjustment.text]
         vectorw = clf.vw.fit_transform(text)
         vectorc = clf.vc.fit_transform(text)
-
         data = sparse.hstack([vectorw, vectorc])
-
         category = [adjustment.category]
         with open(baseDir.joinpath('model', 'dataset.csv'), 'a') as csvfile:
                writer = csv.writer(csvfile, delimiter=';')
                writer.writerow([adjustment.category, adjustment.text])
-
         y = clf.le.transform(category)
         clf.model.partial_fit(data, y)
         r.conn.delete(adjustment.text)
